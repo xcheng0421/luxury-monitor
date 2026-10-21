@@ -235,17 +235,25 @@ def send_email(subject: str, body: str, attach_screenshot: bool = False) -> bool
         # 最多重试 3 轮；每轮先试 465(SSL)，失败再试 587(STARTTLS)
         for attempt in range(1, 4):
             for mode in ("465-SSL", "587-STARTTLS"):
+                stage = "connect"  # 记录失败发生在哪一步（不会打印任何密码）
                 try:
                     if mode == "465-SSL":
                         with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context, timeout=30) as smtp:
+                            stage = "login"
                             smtp.login(user, password)
+                            stage = "send"
                             smtp.send_message(msg)
                     else:
                         with smtplib.SMTP("smtp.gmail.com", 587, timeout=30) as smtp:
+                            stage = "ehlo"
                             smtp.ehlo()
+                            stage = "starttls"
                             smtp.starttls(context=context)
+                            stage = "ehlo2"
                             smtp.ehlo()
+                            stage = "login"
                             smtp.login(user, password)
+                            stage = "send"
                             smtp.send_message(msg)
                     log(f"邮件发送成功（{mode}）-> {to_addr}")
                     return True
@@ -255,7 +263,7 @@ def send_email(subject: str, body: str, attach_screenshot: bool = False) -> bool
                     return False
                 except Exception as exc:
                     last_exc = exc
-                    log(f"邮件发送失败（第 {attempt} 轮，{mode}）：{exc!r}")
+                    log(f"邮件发送失败（第 {attempt} 轮，{mode}，失败阶段={stage}）：{exc!r}")
             time.sleep(3 * attempt)
         log(f"邮件多次重试后仍然失败：{last_exc!r}")
         return False
