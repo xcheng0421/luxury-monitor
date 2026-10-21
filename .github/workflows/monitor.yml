@@ -1,0 +1,68 @@
+name: Restock Monitor
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"   # 每 5 分钟一次（GitHub 可能延迟几分钟，这是正常的）
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "运行模式"
+        required: true
+        default: "normal"
+        type: choice
+        options:
+          - normal       # 正常检测
+          - test-email   # 只发测试邮件
+          - test-bark    # 只发 Bark 紧急测试推送
+
+concurrency:
+  group: restock-monitor
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 下载代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: 安装依赖
+        run: pip install -r requirements.txt
+
+      - name: 安装浏览器
+        run: python -m playwright install --with-deps chromium
+
+      - name: 运行检测
+        env:
+          BARK_KEY: ${{ secrets.BARK_KEY }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
+          # 如果按钮文字和网页不一致，改这里（引号里填网页上的真实文字）
+          IN_STOCK_TEXT: "ADD TO BAG"
+          OUT_OF_STOCK_TEXT: "ORDER BY PHONE"
+        run: |
+          MODE="${{ github.event.inputs.mode }}"
+          if [ "$MODE" = "test-email" ]; then
+            python monitor.py --test-email
+          elif [ "$MODE" = "test-bark" ]; then
+            python monitor.py --test-bark
+          else
+            python monitor.py
+          fi
+
+      - name: 保存截图
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshot
+          path: screenshot.png
+          if-no-files-found: ignore
+          retention-days: 3
