@@ -185,8 +185,8 @@ def send_bark(title: str, body: str) -> bool:
             "body": body,
             "level": "critical",
             "call": "1",
-            "volume": 10,
-            "sound": "alarm",
+            "volume": 3,
+            "sound": "minuet",
             "group": "restock",
             "url": PRODUCT_URL,
         }
