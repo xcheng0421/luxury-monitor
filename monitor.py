@@ -231,11 +231,34 @@ def send_email(subject: str, body: str, attach_screenshot: bool = False) -> bool
             )
 
         context = ssl.create_default_context()
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context, timeout=30) as smtp:
-            smtp.login(user, password)
-            smtp.send_message(msg)
-        log(f"邮件发送成功 -> {to_addr}")
-        return True
+        last_exc: Exception | None = None
+        # 最多重试 3 轮；每轮先试 465(SSL)，失败再试 587(STARTTLS)
+        for attempt in range(1, 4):
+            for mode in ("465-SSL", "587-STARTTLS"):
+                try:
+                    if mode == "465-SSL":
+                        with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context, timeout=30) as smtp:
+                            smtp.login(user, password)
+                            smtp.send_message(msg)
+                    else:
+                        with smtplib.SMTP("smtp.gmail.com", 587, timeout=30) as smtp:
+                            smtp.ehlo()
+                            smtp.starttls(context=context)
+                            smtp.ehlo()
+                            smtp.login(user, password)
+                            smtp.send_message(msg)
+                    log(f"邮件发送成功（{mode}）-> {to_addr}")
+                    return True
+                except smtplib.SMTPAuthenticationError as exc:
+                    # 账号或应用专用密码错误，重试没有意义
+                    log(f"邮件发送失败：Gmail 拒绝登录，请检查 GMAIL_USER / GMAIL_APP_PASSWORD：{exc!r}")
+                    return False
+                except Exception as exc:
+                    last_exc = exc
+                    log(f"邮件发送失败（第 {attempt} 轮，{mode}）：{exc!r}")
+            time.sleep(3 * attempt)
+        log(f"邮件多次重试后仍然失败：{last_exc!r}")
+        return False
     except Exception as exc:
         log(f"邮件发送失败：{exc!r}")
         return False
